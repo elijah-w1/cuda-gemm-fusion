@@ -5,10 +5,10 @@
 // 融合版(1 kernel): 在线 softmax(running max/sum)，S 矩阵不落显存
 //
 // 综合运用:
-//   Day1: 线程模型 / CUDA events 计时 / warmup
-//   Day2: 共享内存 tiling / 向量化 / 合并访问
-//   Day3: 算子融合 / 在线 softmax / block 归约
-//   Day4: 朴素 vs 融合公平对比（控制变量：同一 GEMM 实现）
+//   阶段 1: 线程模型 / CUDA events 计时 / warmup
+//   阶段 2: 共享内存 tiling / 向量化 / 合并访问
+//   阶段 3: 算子融合 / 在线 softmax / block 归约
+//   阶段 4: 朴素 vs 融合公平对比（控制变量：同一 GEMM 实现）
 //
 // 编译: nvcc -O3 -arch=sm_89 -Xcompiler /utf-8 attn_fused.cu -o attn_fused.exe
 // 运行: ./attn_fused.exe [M] [d]    默认 M=1024 d=64
@@ -36,7 +36,7 @@ float time_ms(F launch, int iters) {
     return ms / iters;
 }
 
-// ================= 朴素版 1/3: S = Q·K^T * scale (tiled GEMM, Day 2 知识) =====
+// ================= 朴素版 1/3: S = Q·K^T * scale (tiled GEMM, 阶段 2 知识) =====
 __global__ void sgemm_tiled(const float* A, const float* B, float* C,
                             int M, int N, int K, float scale) {
     __shared__ float As[TILE][TILE];
@@ -58,7 +58,7 @@ __global__ void sgemm_tiled(const float* A, const float* B, float* C,
         C[row * N + col] = sum * scale;
 }
 
-// ================= 朴素版 2/3: softmax 每行 (Day 3.5 的 warp 归约知识) =====
+// ================= 朴素版 2/3: softmax 每行 (阶段 3.5 的 warp 归约知识) =====
 __global__ void softmax_kernel(float* S, int M) {
     __shared__ float red[32];
     const int tx = threadIdx.x;      // 0..31, 每线程处理 M/32 列（grid-stride）

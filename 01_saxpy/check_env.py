@@ -1,4 +1,4 @@
-"""Day 1 环境自检脚本: python check_env.py"""
+"""阶段 1 环境自检脚本: python check_env.py"""
 import sys, subprocess, platform
 
 print("=== 环境自检 ===")

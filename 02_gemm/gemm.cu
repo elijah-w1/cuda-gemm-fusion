@@ -1,4 +1,4 @@
-// gemm.cu — Day 2 手写 SGEMM: naive -> shared-memory tiling -> float4
+// gemm.cu — 阶段 2 手写 SGEMM: naive -> shared-memory tiling -> float4
 // C = A x B, 行主序, 单精度
 //
 // 编译:

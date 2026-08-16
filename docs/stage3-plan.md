@@ -1,7 +1,7 @@
-# Day 3 具体计划：算子融合（GEMM + Bias + ReLU）
+# 阶段 3 具体计划：算子融合（GEMM + Bias + ReLU）
 
 > 背景：Triton 在 Windows + Python 3.13 无法安装（官方无 wheel，社区源被墙），
-> 故 Day 3 改为**手写 CUDA 算子融合**——这正是 AI 编译器的核心优化，
+> 故 阶段 3 改为**手写 CUDA 算子融合**——这正是 AI 编译器的核心优化，
 > 不依赖任何库，效果同样有说服力。
 > 预计用时：3~4 小时
 
@@ -17,7 +17,7 @@
 
 ## 二、任务
 
-1. **分离版**：复用 Day 2 的 tiled GEMM + 两个 elementwise kernel（bias、relu）
+1. **分离版**：复用 阶段 2 的 tiled GEMM + 两个 elementwise kernel（bias、relu）
 2. **融合版**：把 bias 和 relu 折叠进 GEMM kernel 的最后一步：
    `C[row][col] = fmaxf(0, sum + bias[col])`
 3. **正确性**：两版结果一致（相对误差 < 1e-3）
@@ -27,7 +27,7 @@
 
 - 小矩阵：融合版显著快（省 2 次 launch，~微秒级开销占大头）
 - 大矩阵：融合版略快（省 2 次中间张量读写）
-- 呼应 Day 1：kernel launch 有固定开销 + 中间张量写回显存 → 这就是融合动机
+- 呼应 阶段 1：kernel launch 有固定开销 + 中间张量写回显存 → 这就是融合动机
 
 ## 四、验收
 
@@ -38,11 +38,11 @@
 
 ---
 
-# Day 3.5 升级：归约类融合 softmax(A@B + bias)
+# 阶段 3.5 升级：归约类融合 softmax(A@B + bias)
 
 > 背景：relu(elementwise) 融合只改 1 行，面试深度不够。
 > 升级目标：softmax 需要整行归约（max/sum），展示"融合遇到数据依赖怎么办"。
-> 代码：`day3_fusion/softmax_fusion.cu`
+> 代码：`阶段 3_fusion/softmax_fusion.cu`
 > 预计用时：3~4 小时
 
 ## 一、为什么 softmax 比 relu 难

@@ -1,4 +1,4 @@
-// saxpy.cu — Day 1 入门 kernel
+// saxpy.cu — 阶段 1 入门 kernel
 // y = a * x + y, N 个 float 元素
 //
 // 编译（Windows, 在装有 nvcc 的终端）:

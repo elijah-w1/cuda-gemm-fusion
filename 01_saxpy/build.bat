@@ -1,5 +1,5 @@
 @echo off
-REM Day 1 build script (Windows)
+REM Stage 1 build script (Windows)
 REM Steps: 1) load MSVC env (Visual Studio), 2) find nvcc, 3) compile & run
 REM
 REM Key points:

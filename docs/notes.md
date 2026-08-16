@@ -1,4 +1,4 @@
-# 笔记（Day 1 复盘用）
+# 笔记（阶段 1 复盘用）
 
 ## 硬件信息
 - GPU 型号：NVIDIA GeForce RTX 4070 Laptop
@@ -54,12 +54,12 @@
 - 大张量 64MB (1<<24) 乘法：kernel 888 微秒 → 有效带宽 ~210 GB/s（与手写 saxpy 一致，纯访存型）
 - 一句话理解算子融合动机：kernel launch 有固定开销 + 中间张量要写回显存，把多个小算子合并成一个大 kernel 能省掉这两部分；小算子越多、融合收益越大
 
-## Day 1 总结
-SAXPY 是访存密集型任务：瓶颈是显存带宽（~215 GB/s ≈ 理论 256 GB/s 的 84%），threads/blocks 怎么调性能几乎不变；kernel launch 固定开销（~5-8µs）在小算子上占比巨大，这是算子融合的动机。Day 2 的 GEMM 既有访存又有计算，优化空间更大。
+## 阶段 1 总结
+SAXPY 是访存密集型任务：瓶颈是显存带宽（~215 GB/s ≈ 理论 256 GB/s 的 84%），threads/blocks 怎么调性能几乎不变；kernel launch 固定开销（~5-8µs）在小算子上占比巨大，这是算子融合的动机。阶段 2 的 GEMM 既有访存又有计算，优化空间更大。
 
 ---
 
-# Day 2 笔记：手写 SGEMM
+# 阶段 2 笔记：手写 SGEMM
 
 ## 实测数据（RTX 4070 Laptop，行主序单精度，正确性全部 PASS）
 | 尺寸 | 版本 | ms | GFLOPS | vs naive |
@@ -83,7 +83,7 @@ SAXPY 是访存密集型任务：瓶颈是显存带宽（~215 GB/s ≈ 理论 25
 - **为什么 tiling 只有 1.3x 而不是计划预期的 5-20x？** ① naive 的 B 访问本来就是合并的，A 是 warp 内广播（也高效）② 小矩阵时数据全在 L2（4070 有 32MB），naive 的冗余读大部分被 L2 命中 ③ naive 已是 1.1 TFLOPS，不算差实现。tiling 的真实收益在数据超出 L2、DRAM 流量成为瓶颈时最明显
 - float4 提升到 ~3.4 TFLOPS（总 ~3x）：访存指令数减到 1/4
 - cuBLAS ~9.7-13 TFLOPS（FP32 理论 15 TFLOPS 的 ~80%）：还有寄存器分块、double buffering、循环展开、tensor core 等
-- 手写 vs cuBLAS 差 ~3.8x → Day 3 优化方向（每线程算多个 C 元素、寄存器复用）
+- 手写 vs cuBLAS 差 ~3.8x → 阶段 3 优化方向（每线程算多个 C 元素、寄存器复用）
 
 ## 泛化验证（额外补充）
 | 场景 | naive | tiled | vec4 | cuBLAS | 结论 |
@@ -94,7 +94,7 @@ SAXPY 是访存密集型任务：瓶颈是显存带宽（~215 GB/s ≈ 理论 25
 ## 踩坑
 - **cuBLAS 首次调用有 heuristics 开销**：计时前必须 warmup，否则 1024³ 只有 348 GFLOPS（实际 9740）
 
-## Day 2 自测题
+## 阶段 2 自测题
 1. naive 慢的根因？→ **不是 B 不合并**（B 列访问是合并的），而是访存冗余：A 每元素被 N 线程重复读、B 每元素被 M 线程重复读，总访存量 2·M·N·K·4B
 2. TILE=32 → As+Bs 各 32×32×4B=4KB，共 8KB/block shared memory
 3. 不加 `__syncthreads()` → 读共享内存时其他线程还没写完 → 数据竞争，结果错误
@@ -102,7 +102,7 @@ SAXPY 是访存密集型任务：瓶颈是显存带宽（~215 GB/s ≈ 理论 25
 
 ---
 
-# Day 3 笔记：算子融合（GEMM + Bias + ReLU）
+# 阶段 3 笔记：算子融合（GEMM + Bias + ReLU）
 
 > 计算 y = relu(A×B + bias)。Triton 在 Windows+py3.13 装不上，改为手写 CUDA 融合。
 > 分离版 = 3 kernel（gemm/bias/relu），融合版 = 1 kernel。
@@ -116,7 +116,7 @@ SAXPY 是访存密集型任务：瓶颈是显存带宽（~215 GB/s ≈ 理论 25
 ## 结论
 - 小算子（小矩阵）：launch 开销占比大 → 融合收益显著（36.6%）
 - 大算子（大矩阵）：GEMM 计算/访存主导 → 融合收益小（2.2%），但仍省 2 次中间张量读写
-- 与 Day 1 profiler 发现完全一致：kernel launch 固定 ~5-8µs，**小算子融合价值最大**
+- 与 阶段 1 profiler 发现完全一致：kernel launch 固定 ~5-8µs，**小算子融合价值最大**
 - 这就是 AI 编译器（torch.compile / TVM / Triton）做算子融合的根本原因
 
 ## 面试可用
@@ -133,7 +133,7 @@ C[row * N + col] = fmaxf(0.f, sum + bias[col]);   // 融合点：只改了这一
 
 ### 难点 1：判断"能不能折叠"（数据依赖分析）
 - bias 只依赖列号 col、relu 只依赖本元素 → **无跨线程依赖** → 才能安全折叠
-- 换成 softmax / LayerNorm（需要整行归约）→ 这 1 行不成立，必须改布局（见 Day 3.5）
+- 换成 softmax / LayerNorm（需要整行归约）→ 这 1 行不成立，必须改布局（见 阶段 3.5）
 - 这正是 AI 编译器做的依赖分析：torch.compile 判断哪些算子可融合
 
 ### 难点 2：严格数值等价
@@ -155,11 +155,11 @@ C[row * N + col] = fmaxf(0.f, sum + bias[col]);   // 融合点：只改了这一
 
 ---
 
-# Day 3.5 笔记：归约类融合 softmax(A@B + bias)
+# 阶段 3.5 笔记：归约类融合 softmax(A@B + bias)
 
 > 升级：relu(elementwise) 融合太简单，加 softmax(归约类) 展示真正的难点。
 > 关键设计：**每个 block 覆盖完整行(N=256)** → 行归约在 block 内完成（warp shuffle）。
-> 代码：`day3_fusion/softmax_fusion.cu`
+> 代码：`阶段 3_fusion/softmax_fusion.cu`
 
 ## 实测（RTX 4070 Laptop，N=256 固定，rel_err=0）
 | M | K | 分离 3 kernel | 融合 1 kernel | 节省 |
@@ -196,7 +196,7 @@ C[row * N + col] = fmaxf(0.f, sum + bias[col]);   // 融合点：只改了这一
 
 ---
 
-# Day 4 笔记：PyTorch eager 融合现状 vs 手写融合
+# 阶段 4 笔记：PyTorch eager 融合现状 vs 手写融合
 
 > torch.compile 需 Triton（Windows+py3.13 装不上），改用 torch.profiler 数 kernel。
 > 目标：`y = relu(x@W + b)`，看 PyTorch 默认启动几个 kernel。
@@ -206,21 +206,21 @@ C[row * N + col] = fmaxf(0.f, sum + bias[col]);   // 融合点：只改了这一
 |---|---|---|---|
 | `relu(x@w+b)` | **4** | sgemm(51.9µs) + splitK-reduce(4.0µs) + bias-add(2.6µs) + relu(1.7µs) | 66.2 µs |
 | `relu(F.linear(x,w,b))` | **3** | sgemm含bias-epilogue(62.2µs) + relu(1.7µs) + Memset | 76.3 µs |
-| 手写融合（Day 3） | **1** | GEMM+bias+relu 全包 | —— |
+| 手写融合（阶段 3） | **1** | GEMM+bias+relu 全包 | —— |
 
 ## 结论
 - **cuBLAS epilogue 能融合 bias**（F.linear 利用这点）：GEMM 算完顺便加 bias，不单独开 kernel
 - **relu 在 eager 下永远是单独 kernel**：PyTorch eager 不做跨算子融合
 - 手写融合 = 1 kernel，比 PyTorch eager 更极致（省 relu 的 launch + 中间读写）
 - **torch.compile 的意义**：把"手写才能做的融合"自动化（图优化 pass）
-- 与 Day 1/3 完全闭环：launch 开销实测 → 融合动机 → 融合收益 → 编译器原理
+- 与 阶段 1/3 完全闭环：launch 开销实测 → 融合动机 → 融合收益 → 编译器原理
 
 ## 面试可用
 - "为什么需要 AI 编译器？"→ eager 模式 relu 无法融合进 GEMM，需要编译器做图优化
 - "cuBLAS epilogue 是什么？"→ cuBLAS 允许在 GEMM 输出时附加 bias/scale 等操作
 - "手写融合和 torch.compile 的关系？"→ 同一件事，手动 vs 自动
 
-## Day 4 补充实验（batch 影响 + 绝对时间，代码 day4_eager2.py）
+## 阶段 4 补充实验（batch 影响 + 绝对时间，代码 阶段 4_eager2.py）
 
 ### 实验 1：不同 batch(M) 对 kernel 数与耗时（relu(x@w+b)，N=K=2048）
 | M | GPU kernels | avg 耗时 | kernel 列表 |
@@ -242,13 +242,13 @@ C[row * N + col] = fmaxf(0.f, sum + bias[col]);   // 融合点：只改了这一
 
 **重要解读（方法论教训）**：这个对比**不能**说明"eager 比融合好"！
 - 两者 **GEMM 实现不同**：eager 用 cuBLAS（13 TFLOPS），手写用 tiled（1.5 TFLOPS）
-- 手写融合的价值在"**相同 GEMM 下**省 launch + 中间读写"（Day 3 已证明：同实现省 2.2%）
-- 这个数据展示的是 **cuBLAS vs 手写 GEMM 的库优化差距**（Day 2 已量化：9x）
+- 手写融合的价值在"**相同 GEMM 下**省 launch + 中间读写"（阶段 3 已证明：同实现省 2.2%）
+- 这个数据展示的是 **cuBLAS vs 手写 GEMM 的库优化差距**（阶段 2 已量化：9x）
 - **性能对比必须控制变量**：比融合收益要同 GEMM 实现，比库优化要同算子
 
 ---
 
-# Day 5 收官笔记：简化版 Flash Attention（attn_fused.cu）
+# 阶段 5 收官笔记：简化版 Flash Attention（attn_fused.cu）
 
 ## 计算
 `O = softmax(Q·K^T / sqrt(d))·V`（M 行 × d 维），朴素 vs 在线融合
@@ -268,11 +268,11 @@ C[row * N + col] = fmaxf(0.f, sum + bias[col]);   // 融合点：只改了这一
 ## 综合 4 天知识映射
 | 代码 | 知识来源 |
 |---|---|
-| sgemm_tiled（朴素 GEMM） | Day 2：共享内存 tiling、合并访问 |
-| softmax_kernel（warp 归约） | Day 3.5：__shfl_xor_sync、数值稳定 |
-| attn_fused（在线 softmax） | Day 3：融合思想 + Flash Attention 精髓 |
-| time_ms / warmup / 控制变量 | Day 1/4：计时方法 + 公平对比 |
-| 相对误差校验 | Day 2/4：浮点累积误差处理 |
+| sgemm_tiled（朴素 GEMM） | 阶段 2：共享内存 tiling、合并访问 |
+| softmax_kernel（warp 归约） | 阶段 3.5：__shfl_xor_sync、数值稳定 |
+| attn_fused（在线 softmax） | 阶段 3：融合思想 + Flash Attention 精髓 |
+| time_ms / warmup / 控制变量 | 阶段 1/4：计时方法 + 公平对比 |
+| 相对误差校验 | 阶段 2/4：浮点累积误差处理 |
 
 ## 简历一句话
 "实现简化版 Flash Attention：在线 softmax（running max/sum）融合进 GEMM，S 矩阵不写回显存，M=4096 时省 64MB 显存，数值等价验证 PASS（rel_err~1e-5）"

@@ -1,7 +1,7 @@
-# Day 2 深入讲解：矩阵乘法每一步优化快在哪
+# 阶段 2 深入讲解：矩阵乘法每一步优化快在哪
 
 > 数据来源：RTX 4070 Laptop（sm_89，FP32 算力 ~15 TFLOPS，带宽 256 GB/s），4096³ 实测。
-> 配套代码：`day2_gemm/gemm.cu`（naive / tiled / vec4 / cuBLAS 四版本）
+> 配套代码：`阶段 2_gemm/gemm.cu`（naive / tiled / vec4 / cuBLAS 四版本）
 
 ## 总览：四步阶梯
 

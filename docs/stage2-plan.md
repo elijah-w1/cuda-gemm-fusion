@@ -1,4 +1,4 @@
-# Day 2 具体计划：手写 SGEMM（naive → 共享内存 → 向量化）
+# 阶段 2 具体计划：手写 SGEMM（naive → 共享内存 → 向量化）
 
 > 硬件：RTX 4070 Laptop（sm_89，理论带宽 256 GB/s，FP32 ~15 TFLOPS）
 > 预计用时：4~6 小时

@@ -1,5 +1,5 @@
-"""profiler_demo.py — Day 1 Task 6
-观察: kernel launch overhead 在小张量时占比巨大, 这是 Day 4 算子融合的动机。
+"""profiler_demo.py — 阶段 1 Task 6
+观察: kernel launch overhead 在小张量时占比巨大, 这是 阶段 4 算子融合的动机。
 运行: python profiler_demo.py
 """
 import torch

@@ -1,4 +1,4 @@
-// softmax_fusion.cu — Day 3 升级: 归约类融合 softmax(A*B + bias)
+// softmax_fusion.cu — 阶段 3 升级: 归约类融合 softmax(A*B + bias)
 // 演示 relu(elementwise) 能简单折叠 vs softmax(归约) 需要特殊布局
 //
 // 关键设计: 每个 block 覆盖"完整行"(N=256 列) → 行归约在 block 内完成
@@ -104,7 +104,7 @@ __global__ void gemm_softmax_fused(const float* A, const float* B,
         C[row * NCOLS + tx * CPT + i] = v[i] / local_sum;
 }
 
-// ============ 分离版 1/3: GEMM (Day 3 的 tiled 版本) ============
+// ============ 分离版 1/3: GEMM (阶段 3 的 tiled 版本) ============
 __global__ void sgemm_tiled(const float* A, const float* B, float* C,
                             int M, int N, int K) {
     __shared__ float As[TILE][TILE];

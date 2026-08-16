@@ -1,4 +1,4 @@
-// fusion.cu — Day 3 算子融合: y = relu(A x B + bias)
+// fusion.cu — 阶段 3 算子融合: y = relu(A x B + bias)
 // 手写 CUDA，不依赖 cuBLAS/Triton
 //
 // 编译:  nvcc -O3 -arch=sm_89 -Xcompiler /utf-8 fusion.cu -o fusion.exe
@@ -32,7 +32,7 @@ float time_ms(F launch, int iters) {
     return ms / iters;
 }
 
-// ============ 分离版 1/3: GEMM (tiled, Day 2 的 kernel) ============
+// ============ 分离版 1/3: GEMM (tiled, 阶段 2 的 kernel) ============
 __global__ void sgemm_tiled(const float* A, const float* B, float* C,
                             int M, int N, int K) {
     __shared__ float As[TILE][TILE];

@@ -1,8 +1,8 @@
-"""day4_eager2.py — Day 4 补充实验
+"""阶段 4_eager2.py — 阶段 4 补充实验
 1) 不同 batch(M) 对 kernel 数和耗时的影响
-2) 2048^3 方阵: PyTorch eager vs 手写融合(fusion.exe Day 3 数据)
+2) 2048^3 方阵: PyTorch eager vs 手写融合(fusion.exe 阶段 3 数据)
 
-运行: python day4_eager2.py
+运行: python 阶段 4_eager2.py
 """
 import torch
 import torch.nn.functional as F
@@ -58,5 +58,5 @@ def big():
     return torch.relu(F.linear(x, w, b))
 t_eager = bench(big, 5)
 print(f"PyTorch eager  relu(linear(2048^3)) : {t_eager:.4f} ms")
-print(f"手写融合 kernel (Day 3 fusion.exe)  : 11.7436 ms  (N=2048 实测)")
+print(f"手写融合 kernel (阶段 3 fusion.exe)  : 11.7436 ms  (N=2048 实测)")
 print(f"eager / 手写融合 = {t_eager/11.7436:.2f}x")

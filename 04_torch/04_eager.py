@@ -1,11 +1,11 @@
-"""day4_eager.py — Day 4: PyTorch eager 模式的算子融合现状
-对比 PyTorch 默认执行 vs Day 3 手写 CUDA 融合 kernel (fusion.exe)
+"""阶段 4_eager.py — 阶段 4: PyTorch eager 模式的算子融合现状
+对比 PyTorch 默认执行 vs 阶段 3 手写 CUDA 融合 kernel (fusion.exe)
 
 背景: torch.compile 需要 Triton, 而 Windows+py3.13 无法安装 Triton
      (官方无 wheel, 社区源失效)。所以聚焦:
      "PyTorch 默认(eager)执行 relu(x@W+b) 到底启动几个 kernel?"
 
-运行: python day4_eager.py
+运行: python 阶段 4_eager.py
 """
 import torch
 import torch.nn.functional as F

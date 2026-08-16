@@ -1,4 +1,4 @@
-# Day 1 具体计划：环境搭建 + CUDA 线程模型 + SAXPY
+# 阶段 1 具体计划：环境搭建 + CUDA 线程模型 + SAXPY
 
 > 你的硬件：RTX 4070 Laptop（8GB，Ada Lovelace，**sm_89**）
 > 预计用时：6~8 小时（含安装等待）
@@ -15,7 +15,7 @@
 | 2:30-4:00 | 学 CUDA 线程模型 | 看懂 kernel 索引公式 |
 | 4:00-6:00 | 编译运行 SAXPY + 计时 | 性能对比表 |
 | 6:00-7:00 | torch.profiler 实验 | 理解 kernel launch overhead |
-| 7:00-7:30 | 复盘 + 写笔记 | 明天 Day 2 的起点 |
+| 7:00-7:30 | 复盘 + 写笔记 | 明天 阶段 2 的起点 |
 
 ---
 
@@ -28,7 +28,7 @@ nvidia-smi
 #   记下顶部 "CUDA Version: xx.x"（这是驱动支持的，>=12 即可）
 
 # 2) 运行我写好的自检脚本
-cd D:\mingw64\elijjah\hh\day1_saxpy
+cd D:\mingw64\elijjah\hh\阶段 1_saxpy
 python check_env.py
 ```
 
@@ -86,7 +86,7 @@ gridDim.x    : 一共有多少个 block
 
 ### Task 5：编译运行 SAXPY（1.5 小时）
 ```powershell
-cd D:\mingw64\elijjah\hh\day1_saxpy
+cd D:\mingw64\elijjah\hh\阶段 1_saxpy
 .\build.bat
 ```
 观察输出中的 4 个数字：CPU 耗时、GPU kernel1、GPU kernel2、有效带宽。
@@ -98,12 +98,12 @@ cd D:\mingw64\elijjah\hh\day1_saxpy
 
 ### Task 6：torch.profiler 看 kernel launch 开销（1 小时）
 ```powershell
-cd D:\mingw64\elijjah\hh\day1_saxpy
+cd D:\mingw64\elijjah\hh\阶段 1_saxpy
 python profiler_demo.py
 ```
 **核心观察**：
 - 一个小张量（如 1024 元素）的加法和一个 100 万元素的加法，耗时差多少？
-- 小张量时 **launch overhead（~5-10 微秒）** 占比巨大 → 这是 Day 4 算子融合要解决的问题。
+- 小张量时 **launch overhead（~5-10 微秒）** 占比巨大 → 这是 阶段 4 算子融合要解决的问题。
 
 ### Task 7：复盘笔记（30 分钟）
 在 `docs/notes.md` 里记录：
@@ -115,7 +115,7 @@ python profiler_demo.py
 
 ---
 
-## 三、验收清单（全部 ☑ 才算 Day 1 完成）
+## 三、验收清单（全部 ☑ 才算 阶段 1 完成）
 
 - [ ] `nvcc --version` 有输出
 - [ ] `python check_env.py` 全部 [OK]

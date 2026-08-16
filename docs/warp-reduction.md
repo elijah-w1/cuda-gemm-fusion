@@ -1,7 +1,7 @@
 # Warp 归约详解（__shfl_xor_sync）
 
 > GPU 编程高级技巧 · 面试高频手写题 · Flash Attention 的思想基础
-> 关联代码：`day3_fusion/softmax_fusion.cu`（归约类算子融合）
+> 关联代码：`阶段 3_fusion/softmax_fusion.cu`（归约类算子融合）
 
 ## 一、warp 是什么
 
