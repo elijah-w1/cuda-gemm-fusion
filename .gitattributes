@@ -1,0 +1,14 @@
+# Normalize line endings
+* text=auto
+
+# Windows batch scripts: keep CRLF
+*.bat text eol=crlf
+
+# Source code: LF
+*.cu text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.py text eol=lf
+
+# Docs: LF
+*.md text eol=lf
