@@ -1,0 +1,24 @@
+# ---- 编译产物 ----
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+*.dll
+*.lib
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- IDE / 系统 ----
+.vs/
+.vscode/
+build/
+.DS_Store
+Thumbs.db
+
+# ---- 临时 ----
+*.log
+tmp/
