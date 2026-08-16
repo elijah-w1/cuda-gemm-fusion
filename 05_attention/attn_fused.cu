@@ -152,6 +152,85 @@ __global__ void attn_fused(const float* Q, const float* K, const float* V,
     O[(size_t)row * d + tid] = o / l;
 }
 
+// ============ 融合版 v2: 并行 Flash Attention（每 block 处理多行）============
+// 相比 v1（每行一 block）的改进:
+//   1. 每 block 处理 BR=8 行 → K/V 加载一次被 8 行复用（全局访存 ÷8）
+//   2. block = 256 线程（8 个 warp）→ 线程利用率 4 倍于 v1
+//   3. 每行一个 warp（x 方向 32 线程）→ 行归约仍用 __shfl_xor_sync
+// 布局: block(32, 8) = 256 线程, grid = M/8, 每线程算 1 行 × 2 列
+#define BR 8
+__global__ void attn_fused_v2(const float* Q, const float* K, const float* V,
+                              float* O, int M, int d, float scale) {
+    const int tx = threadIdx.x;   // 0..31 (一个 warp = 一行)
+    const int ty = threadIdx.y;   // 0..BR-1
+    const int row = blockIdx.x * BR + ty;
+    if (row >= M) return;
+
+    __shared__ float Qs[BR][64];
+    __shared__ float Ks[64][64];   // K 块 (d x d)
+    __shared__ float Vs[64][64];   // V 块 (d x d)
+    __shared__ float Ps[BR][64];   // P 值 (BR 行 × 当前块)
+
+    // 加载 Q 块 (BR×d), 每线程 2 列
+    Qs[ty][tx] = Q[(size_t)row * d + tx];
+    Qs[ty][tx + 32] = Q[(size_t)row * d + tx + 32];
+    __syncthreads();
+
+    const int dcol = tx * 2;   // 本线程负责 O 的 2 列
+    float m = -INFINITY, l = 0.f;
+    float o0 = 0.f, o1 = 0.f;
+
+    for (int jb = 0; jb < M; jb += d) {
+        // ① 协同加载 K/V 块（每线程 16 个，合并访问）
+        for (int idx = ty * 32 + tx; idx < d * d; idx += 256) {
+            Ks[idx / d][idx % d] = K[(size_t)(jb + idx / d) * d + idx % d];
+            Vs[idx / d][idx % d] = V[(size_t)(jb + idx / d) * d + idx % d];
+        }
+        __syncthreads();
+
+        // ② 每线程算 S[ty][j] 和 S[ty][j+1] (j = tx*2)
+        float s0 = 0.f, s1 = 0.f;
+#pragma unroll
+        for (int dd = 0; dd < d; ++dd) {
+            const float q = Qs[ty][dd];
+            s0 += q * Ks[tx * 2][dd];
+            s1 += q * Ks[tx * 2 + 1][dd];
+        }
+        s0 *= scale; s1 *= scale;
+
+        // ③ 在线 softmax（每行 = 一个 warp，shfl 归约）
+        float local_max = fmaxf(s0, s1);
+        for (int off = 16; off > 0; off >>= 1)
+            local_max = fmaxf(local_max, __shfl_xor_sync(0xffffffff, local_max, off));
+        float m_new = fmaxf(m, local_max);
+        float alpha = __expf(m - m_new);   // 旧累计修正因子
+
+        float p0 = __expf(s0 - m_new), p1 = __expf(s1 - m_new);
+        Ps[ty][tx * 2] = p0;
+        Ps[ty][tx * 2 + 1] = p1;
+        float local_sum = p0 + p1;
+        for (int off = 16; off > 0; off >>= 1)
+            local_sum += __shfl_xor_sync(0xffffffff, local_sum, off);
+        l = l * alpha + local_sum;
+
+        // ④ O 增量更新: O[row][dcol..dcol+1] += Σ_j Ps[ty][j] * Vs[j][dcol..]
+        float c0 = 0.f, c1 = 0.f;
+#pragma unroll
+        for (int j = 0; j < d; ++j) {
+            const float pj = Ps[ty][j];
+            c0 += pj * Vs[j][dcol];
+            c1 += pj * Vs[j][dcol + 1];
+        }
+        o0 = o0 * alpha + c0;
+        o1 = o1 * alpha + c1;
+        m = m_new;
+        __syncthreads();   // 防下一轮覆盖 Ps
+    }
+
+    O[(size_t)row * d + dcol] = o0 / l;
+    O[(size_t)row * d + dcol + 1] = o1 / l;
+}
+
 // ================= 校验 =================
 double max_rel_err(const float* a, const float* b, int n, float scale) {
     double err = 0.0;
@@ -178,7 +257,8 @@ int main(int argc, char** argv) {
     float *h_KT = (float*)malloc(bytesQ);   // K 的转置 (d×M)
     float *h_O1 = (float*)malloc(bytesQ);
     float *h_O2 = (float*)malloc(bytesQ);
-    if (!h_Q || !h_K || !h_V || !h_KT || !h_O1 || !h_O2) { printf("malloc failed\n"); return 1; }
+    float *h_O3 = (float*)malloc(bytesQ);
+    if (!h_Q || !h_K || !h_V || !h_KT || !h_O1 || !h_O2 || !h_O3) { printf("malloc failed\n"); return 1; }
 
     for (int i = 0; i < M * d; ++i) {
         h_Q[i] = ((float)(i % 7) - 3.f) * 0.05f;
@@ -189,7 +269,7 @@ int main(int argc, char** argv) {
         for (int j = 0; j < d; ++j)
             h_KT[j * M + i] = h_K[i * d + j];
 
-    float *d_Q, *d_K, *d_V, *d_KT, *d_S, *d_O1, *d_O2;
+    float *d_Q, *d_K, *d_V, *d_KT, *d_S, *d_O1, *d_O2, *d_O3;
     cudaMalloc(&d_Q, bytesQ);
     cudaMalloc(&d_K, bytesQ);
     cudaMalloc(&d_V, bytesQ);
@@ -197,6 +277,7 @@ int main(int argc, char** argv) {
     cudaMalloc(&d_S, bytesS);
     cudaMalloc(&d_O1, bytesQ);
     cudaMalloc(&d_O2, bytesQ);
+    cudaMalloc(&d_O3, bytesQ);
     cudaMemcpy(d_Q, h_Q, bytesQ, cudaMemcpyHostToDevice);
     cudaMemcpy(d_K, h_K, bytesQ, cudaMemcpyHostToDevice);
     cudaMemcpy(d_V, h_V, bytesQ, cudaMemcpyHostToDevice);
@@ -212,42 +293,51 @@ int main(int argc, char** argv) {
         sgemm_tiled<<<grdO, blk>>>(d_S, d_V, d_O1, M, d, M, 1.f);
     };
 
-    // 融合版: 1 kernel, 在线 softmax, S 不落显存
+    // 融合版 v1: 每行一个 block（教学简化）
     auto launch_fused = [&]() {
         attn_fused<<<M, d>>>(d_Q, d_K, d_V, d_O2, M, d, scale);
+    };
+    // 融合版 v2: 每 block 处理多行（并行 Flash Attention）
+    dim3 blockV2(32, BR);
+    dim3 gridV2((M + BR - 1) / BR);
+    auto launch_fused2 = [&]() {
+        attn_fused_v2<<<gridV2, blockV2>>>(d_Q, d_K, d_V, d_O3, M, d, scale);
     };
 
     // 正确性: 以朴素版（写回 S 的标准算法）为参考
     launch_naive();
     launch_fused();
+    launch_fused2();
     cudaDeviceSynchronize();
     cudaMemcpy(h_O1, d_O1, bytesQ, cudaMemcpyDeviceToHost);
     cudaMemcpy(h_O2, d_O2, bytesQ, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_O3, d_O3, bytesQ, cudaMemcpyDeviceToHost);
     float cscale = 0.f;
     for (int i = 0; i < M * d; ++i) cscale = fmax(cscale, fabsf(h_O1[i]));
-    double err = max_rel_err(h_O1, h_O2, M * d, cscale);
+    double err1 = max_rel_err(h_O1, h_O2, M * d, cscale);
+    double err2 = max_rel_err(h_O1, h_O3, M * d, cscale);
 
     // 计时
     int iters = (M >= 2048) ? 3 : 10;
     float t_naive = time_ms(launch_naive, iters);
     float t_fused = time_ms(launch_fused, iters);
+    float t_fused2 = time_ms(launch_fused2, iters);
 
     printf("O = softmax(Q K^T / sqrt(%d)) V   M=%d d=%d\n", d, M, d);
     printf("--------------------------------------------------------------\n");
-    printf("naive(3 kernel, 写回S): %9.4f ms\n", t_naive);
-    printf("fused(1 kernel, 在线) : %9.4f ms\n", t_fused);
+    printf("naive (3 kernel, 写回S) : %9.4f ms\n", t_naive);
+    printf("fused v1 (在线)         : %9.4f ms\n", t_fused);
+    printf("fused v2 (并行分块)     : %9.4f ms\n", t_fused2);
     printf("S 矩阵显存: 朴素 %6.1f MB | 融合 0 MB (不写回)\n",
            (double)bytesS / 1024 / 1024);
     printf("kernel 数 : 朴素 3 | 融合 1\n");
-    printf("rel_err   : %g (PASS if <1e-3)\n", err);
+    printf("rel_err: v1=%g v2=%g (PASS if <1e-3)\n", err1, err2);
+    printf("v2 vs v1 加速: %.2fx\n", t_fused / t_fused2);
     printf("--------------------------------------------------------------\n");
-    printf("注: 融合版为教学简化(每行一个 block 串行扫块); 真实 Flash Attention\n");
-    printf("    用跨 block 并行分块 K/V 才能同时省显存和提速。核心思想(在线\n");
-    printf("    softmax + 不写回中间矩阵)已完整验证。\n");
 
     cudaFree(d_Q); cudaFree(d_K); cudaFree(d_V); cudaFree(d_KT);
-    cudaFree(d_S); cudaFree(d_O1); cudaFree(d_O2);
-    free(h_Q); free(h_K); free(h_V); free(h_KT); free(h_O1); free(h_O2);
+    cudaFree(d_S); cudaFree(d_O1); cudaFree(d_O2); cudaFree(d_O3);
+    free(h_Q); free(h_K); free(h_V); free(h_KT); free(h_O1); free(h_O2); free(h_O3);
     return 0;
 }
 

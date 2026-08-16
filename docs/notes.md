@@ -248,31 +248,32 @@ C[row * N + col] = fmaxf(0.f, sum + bias[col]);   // 融合点：只改了这一
 
 ---
 
-# 阶段 5 收官笔记：简化版 Flash Attention（attn_fused.cu）
+# 阶段 5 笔记：Flash Attention 融合（在线 softmax + 并行分块 v2）
 
 ## 计算
 `O = softmax(Q·K^T / sqrt(d))·V`（M 行 × d 维），朴素 vs 在线融合
 
 ## 实测（RTX 4070 Laptop，d=64，rel_err 全部 PASS）
-| M | 朴素(3 kernel, 写回S) | 融合(1 kernel, 在线) | S 显存(朴素) | rel_err |
-|---|---|---|---|---|
-| 1024 | 0.2145 ms | 1.9768 ms | 4 MB | 6.5e-6 |
-| 4096 | 4.0055 ms | 30.5971 ms | **64 MB** | 2.7e-5 |
+| M | 朴素(3 kernel) | v1(在线) | **v2(并行分块)** | S 显存(朴素) | rel_err |
+|---|---|---|---|---|---|
+| 1024 | 0.22 ms | 2.12 ms | **0.37 ms** | 4 MB | 6.5e-6 |
+| 4096 | 4.02 ms | 29.97 ms | **4.73 ms** | **64 MB** | 2.7e-5 |
 
 ## 核心成果（工程意义）
 1. **在线 softmax 数值等价验证**：rel_err ~1e-5 证明 running max/sum 与标准 softmax 数学等价 → Flash Attention 的正确性基础
 2. **S 矩阵不写回显存**：M=4096 省 64MB，M=16384 省 1GB → 长序列 Transformer 的关键
 3. **kernel 融合**：3 → 1
-4. **诚实方法论**：教学简化版（每行一 block 串行扫块）时间不占优，真实 FA 需跨 block 并行分块 K/V——如实记录，不夸大
+4. **并行分块 v2 改进**：每 block 处理 8 行（K/V 加载复用 8 次）+ 每行一个 warp（shfl 归约），比 v1 快 **5.7~6.3x**（M=4096: 29.97→4.73ms），接近朴素性能且保留全部融合收益
+5. **方法论**：对比必须控制变量（同算法比较 v1/v2），正确性用相对误差验证
 
 ## 综合 4 天知识映射
 | 代码 | 知识来源 |
 |---|---|
 | sgemm_tiled（朴素 GEMM） | 阶段 2：共享内存 tiling、合并访问 |
 | softmax_kernel（warp 归约） | 阶段 3.5：__shfl_xor_sync、数值稳定 |
-| attn_fused（在线 softmax） | 阶段 3：融合思想 + Flash Attention 精髓 |
+| attn_fused / v2（在线 softmax） | 阶段 3：融合思想 + Flash Attention 精髓 |
 | time_ms / warmup / 控制变量 | 阶段 1/4：计时方法 + 公平对比 |
 | 相对误差校验 | 阶段 2/4：浮点累积误差处理 |
 
 ## 简历一句话
-"实现简化版 Flash Attention：在线 softmax（running max/sum）融合进 GEMM，S 矩阵不写回显存，M=4096 时省 64MB 显存，数值等价验证 PASS（rel_err~1e-5）"
+"实现 Flash Attention 前向融合：在线 softmax（running max/sum）分块并行（每 block 8 行复用 K/V + warp 归约），S 矩阵不写回显存，M=4096 省 64MB 显存，性能接近朴素实现（4.73 vs 4.02 ms），数值等价验证 PASS（rel_err~1e-5）"

@@ -114,10 +114,12 @@ cd 02_gemm && nvcc -O3 -arch=sm_89 gemm.cu -o gemm.exe -lcublas
 | `relu(F.linear(x,w,b))`（eager） | **3** |
 | 手写融合 kernel | **1** |
 
-### 阶段 5 — 简化 Flash Attention（d=64，在线 softmax）
-| M | 朴素(3 kernel, 写回S) | 融合(1 kernel, 在线) | S 显存(朴素) | rel_err |
-|---|---|---|---|---|
-| 1024 | 0.21 ms | 1.98 ms | 4 MB | 6.5e-6 |
-| 4096 | 4.01 ms | 30.6 ms | **64 MB** | 2.7e-5 |
+### 阶段 5 — Flash Attention 融合（d=64）
+| M | 朴素(3 kernel) | v1(在线) | **v2(并行分块)** | S 显存(朴素) | rel_err |
+|---|---|---|---|---|---|
+| 1024 | 0.22 ms | 2.12 ms | **0.37 ms** | 4 MB | 6.5e-6 |
+| 4096 | 4.02 ms | 29.97 ms | **4.73 ms** | **64 MB** | 2.7e-5 |
+
+> v2 每 block 处理 8 行复用 K/V + warp 归约，比 v1 快 **5.7~6.3x**，接近朴素性能的同时保留融合收益（S 不写回 + 1 kernel）
 
 
