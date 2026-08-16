@@ -22,6 +22,8 @@
 | **简化 Flash Attention** | 在线 softmax 数值等价（rel_err~1e-5），M=4096 省 **64MB** 显存 |
 | **编译器分析** | PyTorch eager 启动 **4 个 kernel** vs 手写融合 **1 个 kernel** |
 
+> 📊 完整实测数据与优化结论见 **[性能报告 PERFORMANCE.md](PERFORMANCE.md)**
+
 ---
 
 ## 快速开始
