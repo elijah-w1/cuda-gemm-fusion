@@ -114,4 +114,10 @@ cd day2_gemm && nvcc -O3 -arch=sm_89 gemm.cu -o gemm.exe -lcublas
 | `relu(F.linear(x,w,b))`（eager） | **3** |
 | 手写融合 kernel | **1** |
 
+### Day 5 — 简化 Flash Attention（d=64，在线 softmax）
+| M | 朴素(3 kernel, 写回S) | 融合(1 kernel, 在线) | S 显存(朴素) | rel_err |
+|---|---|---|---|---|
+| 1024 | 0.21 ms | 1.98 ms | 4 MB | 6.5e-6 |
+| 4096 | 4.01 ms | 30.6 ms | **64 MB** | 2.7e-5 |
+
 
